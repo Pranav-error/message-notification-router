@@ -1,0 +1,15 @@
+# secrets
+.env
+
+# challenge corpus — organizer-provided, excluded per submission rules
+dataset/
+data/
+
+# caches and build artifacts
+.cache/
+dist/
+predictions/
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
