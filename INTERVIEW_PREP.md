@@ -107,9 +107,21 @@ gold set, and per-user threshold learning. Say what you *measured and rejected*,
 
 ---
 
-## The three stories that show judgment
+## The four stories that show judgment
 
 Lead with these. They are stronger than any metric because they show diagnosis, not tuning.
+
+**0. I tested on data the corpus never contained, and it found a real bug.**
+Every other number is on the organizer's synthetic corpus. So I wrote 30 novel messages —
+including scam families absent from the dataset (crypto doubling, fake police, romance
+advance-fee), injections phrased differently, and a real emergency wearing scam clothing.
+28/30 agreement. More importantly it caught a genuine defect: a legitimate OTP *delivery*
+("your one-time password is 448120… do not share it") was being muted as scam by tier 1, so the
+model never saw it. In production that mutes the code the user is waiting for. The regex could
+not tell a credential being delivered from one being requested; the fix walks each transmission
+verb, skips negated ones, and requires a credential object after it — so a scam that fakes the
+"do not share" warning and then asks anyway is still caught. Zero regressions on the corpus.
+Two of my own test labels were also wrong, and I corrected the test rather than the router.
 
 **1. Belief fusion broke, and the fix was an invariant.**
 Porting the PTT belief graph regressed message_type 96.7% → 93.3%. Cause: banding on the

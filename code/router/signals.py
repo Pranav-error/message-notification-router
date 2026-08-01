@@ -26,6 +26,51 @@ CREDENTIAL_ASK = re.compile(
     r"verification code|6[- ]digit)\b",
     re.I,
 )
+
+# Mentioning a credential is not the same as asking for one. A bank *delivering*
+# your OTP names it, states the digits, and tells you not to share it -- that is
+# the message you most want delivered, and muting it would be the opposite of
+# protecting the user. Found by the generalization suite: "Your one-time password
+# is 448120, expires in 10 minutes, do not share it" was being muted by tier 1,
+# so the model never got a chance to correct it.
+CREDENTIAL_DELIVERY = re.compile(
+    r"\b(?:do not|don't|don't|never)\s+(?:share|disclose|reveal)\b"
+    r"|\bwe (?:will )?never ask\b"
+    r"|\bnever asks? (?:you )?for\b",
+    re.I,
+)
+
+# An actual request: a verb of transmission aimed at the reader. Handled as a
+# function rather than one regex because negation scope matters -- "do not
+# share your OTP" and "share your OTP" differ by two words and mean opposite
+# things, and a scam will happily print the warning and then ask anyway.
+TRANSMIT_VERB = re.compile(
+    r"\b(share|send|reply|forward|provide|submit|enter|resend|confirm|give|tell)\b", re.I
+)
+CREDENTIAL_OBJECT = re.compile(
+    r"\b(otp|one[- ]time|password|pin|cvv|login code|verification code|6[- ]digit|"
+    r"card number|account number|code|details|credentials|it|this|them)\b",
+    re.I,
+)
+NEGATOR = re.compile(r"\b(do not|don'?t|never|no need to|without)\s*$", re.I)
+
+
+def requests_credential_fn(text: str) -> bool:
+    """True when the message asks the reader to transmit a secret.
+
+    Scans each transmission verb, skips the ones under a negation ("do not
+    share"), and requires a credential-ish object within the following clause.
+    """
+    for match in TRANSMIT_VERB.finditer(text):
+        preceding = text[max(0, match.start() - 14) : match.start()]
+        if NEGATOR.search(preceding):
+            continue
+        following = text[match.end() : match.end() + 45]
+        if CREDENTIAL_OBJECT.search(following):
+            return True
+    return False
+
+
 ACCOUNT_PRESSURE = re.compile(
     r"\b(account|profile|access|wallet|kyc|card)\b[^.]{0,60}\b"
     r"(block|blocked|suspend|suspended|restrict|restricted|expire|expires|"
@@ -187,10 +232,18 @@ def compute(message: dict, ctx: dict) -> Signals:
     asks_payment = bool(PAYMENT_ASK.search(scannable))
     has_link = bool(LINK.search(scannable))
 
-    # The hard floor: a request for a secret, combined with either manufactured
+    delivers_credential = bool(CREDENTIAL_DELIVERY.search(scannable))
+    requests_credential = requests_credential_fn(scannable)
+
+    # The hard floor: a *request* for a secret, combined with either manufactured
     # urgency about account status or an off-platform link to type it into.
-    sig.credential_harvest = asks_credentials and (
-        pressures_account or has_deadline or has_link or has_shortener
+    # A message that merely delivers a code, and asks for nothing, is exempt --
+    # unless it also contains a genuine request, which is how a scam that quotes
+    # a real-looking code still gets caught.
+    sig.credential_harvest = (
+        asks_credentials
+        and (pressures_account or has_deadline or has_link or has_shortener)
+        and (requests_credential or not delivers_credential)
     )
     if sig.credential_harvest:
         sig.risk_flags.append("asks for OTP/password alongside account pressure or a link")

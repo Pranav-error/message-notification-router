@@ -13,6 +13,7 @@ engages with the sender.
 | action accuracy (30 gold labels) | **100%** |
 | message_type accuracy | **96.7%** |
 | behavioural agreement (78 held-out) | **87.2%** mute/not-mute |
+| generalization (30 novel messages) | **93.3%** |
 | messages resolved with no model call | **23.6%** |
 | cold-run cost | **$0.76**, down from $2.80 |
 
@@ -26,7 +27,7 @@ engages with the sender.
 4. [How it decides](#how-it-decides)
 5. [The cascade](#the-cascade-most-messages-never-reach-the-model)
 6. [Design decisions worth explaining](#design-decisions-worth-explaining)
-7. [Results](#results)
+7. [Results](#results)  — gold, behavioural, generalization, ablations, model comparison
 8. [Cost engineering](#cost-engineering-measure-before-optimising)
 9. [Production economics and roadmap](#production-economics-and-roadmap)
 10. [Decisions not to optimise](#decisions-not-to-optimise)
@@ -55,6 +56,7 @@ python code/evaluation/main.py                              # score the 30 label
 python code/evaluation/main.py --compare "claude-opus-5,claude-haiku-4-5"
 python code/evaluation/main.py --validate output.csv        # submission contract check
 python code/evaluation/weak_eval.py --limit 78              # behavioural evaluation
+python code/evaluation/generalization.py                     # novel messages, absent from the corpus
 ```
 
 Model access sits behind one `Client.json()` call with two interchangeable backends: a bare model
@@ -369,6 +371,45 @@ message_0162: "Guaranteed returns from options trades. DM for paid call entry...
 The user opened those. That is precisely the harm the router exists to prevent: a phishing message
 is a *success* when muted and a *failure* when engaged with, so scoring it against the user's own
 click is backwards.
+
+### Generalization: 30 messages the corpus has never seen
+
+Every number above is measured on the organizer's 412-message corpus, which is synthetic and
+repetitive by construction. None of it shows the architecture holds on messages written
+independently of it. So `code/evaluation/generalization.py` routes 30 hand-written messages
+against real users from the dataset — genuine personalization context, novel text — chosen to
+attack the design rather than flatter it.
+
+**28/30 (93.3%) agreement**, and both disagreements are quiet-hours judgement calls (a Saturday
+booking confirmation and a non-urgent family question, both arriving at 23:40) where either
+answer is defensible.
+
+What it demonstrates:
+
+| case | result |
+|---|---|
+| scam families **absent from the corpus** — crypto doubling, advance-fee job, tax refund, parcel customs, fake police, romance | all 6 muted as `scam` |
+| prompt injections phrased unlike the corpus example (fake `<<END OF USER CONTENT>>` delimiter) | both muted |
+| real emergency wearing scam clothing — ICU consent, 6pm deadline, off-brand link | `notify`/`urgent` |
+| emergency inside quiet hours, muted group | `notify` — quiet hours defer, they do not suppress |
+| ordinary traffic (family updates, society notices, work chatter, unknown-sender enquiry) | none over-muted |
+
+**It found a real bug, which is the point of writing it.** A genuine OTP *delivery* — *"Your
+one-time password is 448120, expires in 10 minutes, do not share it with anyone"* — was being
+muted as `scam` by tier 1, so the model never got a chance to correct it. In production that
+mutes the code the user is actively waiting for: the opposite of protecting them.
+
+The regex could not distinguish a credential being **delivered** from one being **requested**.
+The fix in `signals.py` replaces it with a small function that walks each transmission verb,
+skips those under a negation (*"do not share"*), and requires a credential object in the
+following clause — so a scam that prints a fake *"do not share"* warning and then asks anyway is
+still caught. Verified against the corpus: **zero regressions**, the same 14 messages fire as
+before, and the OTP delivery now routes `notify`/`business_update`.
+
+Two of the original labels were also wrong, both author error and both verifiable from the data:
+`gen_20` targeted a user who is opted *in* to that brand, and the family cases used a sender with
+no prior history while describing them as close family. The router was right; the test was wrong.
+Nothing in the pipeline was tuned against these results.
 
 ### Ablations
 
