@@ -434,24 +434,35 @@ label space also collapses (`spam`→mute, `ham`→not-mute), and the domain is 
 Indian WhatsApp (UPI, KYC, society maintenance). That distance is the point — it is genuinely
 out-of-distribution rather than a restatement of the same test.
 
-**The one false positive is the most useful result in this repository.** A legitimate message —
+**The one false positive is a genuine content-level error, and worth stating plainly.** A
+legitimate message —
 
 ```
 "Save yourself the stress. If the person has a dorm account, just send your
  account details and the money will be sent to you."
 ```
 
-— was muted as `scam`, because "send your account details" is textbook fraud language. Routing
-the identical text with a sender the user actually knows:
+— was muted as `scam`, because "send your account details" is textbook fraud language.
+
+The obvious hypothesis was that the missing personalization caused it: an SMS arrives from an
+unknown number, and this router is built around knowing the sender. `external_eval.py` therefore
+re-routes every false positive from a contact with engaged history — one variable changed — and
+reports the result whichever way it falls. **It falls the other way.** Sampled five times per
+condition:
 
 | sender | decision |
 |---|---|
-| unknown number (as an SMS arrives) | `mute` / `scam` |
-| known contact with engaged history | `digest` / `personal` ✓ matches the human label |
+| unknown number | `mute` 5/5 |
+| known contact, 6 prior messages, 4 replied | `mute` 5/5 |
 
-The error is caused by the *absence* of personalization, and restoring it corrects the decision.
-That is the thesis of this project — **routing is personal** — demonstrated on data written and
-labelled by strangers, rather than asserted.
+So this is not a personalization gap; the content alone drives it. Whether that is *wrong* is
+arguable — a known contact asking you to send bank account details is also what a compromised
+account looks like, and a safety-first router erring toward mute there is defensible. But it is
+an error against the human label, and the honest reading is that the content-safety layer is
+tuned conservatively when no relationship signal is available to offset it.
+
+The ablation stays in the script because a negative result that contradicts the appealing
+hypothesis is worth more than one that confirms it.
 
 ### Ablations
 

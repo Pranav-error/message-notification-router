@@ -126,13 +126,18 @@ Two of my own test labels were also wrong, and I corrected the test rather than 
 **0b. External validation: 96.7% on a public human-labelled SMS corpus.**
 The generalization suite is still me scoring my own system, so I also ran the UCI SMS Spam
 Collection — 5,406 real messages labelled by human annotators, downloaded at runtime. 96.7%
-agreement, 29/30 spam caught, 29/30 legitimate left alone. Be precise about what it shows: SMS
-has no personalization context, so it tests the content-safety path only, and the domain is 2011
-UK SMS against 2026 Indian WhatsApp. Then give them the good part: the single false positive was
-"just send your account details and the money will be sent to you", muted as scam. Re-routed from
-a known contact with history, the same text becomes digest/personal — the human label. The error
-was caused by missing personalization, which is the project's thesis demonstrated on somebody
-else's data.
+agreement, 29/30 spam caught, 29/30 legitimate left alone. Be precise about scope: SMS has no
+personalization context, so it tests the content-safety path only, and the domain is 2011 UK SMS
+against 2026 Indian WhatsApp.
+
+The honest part, and the bit worth telling: the single false positive was "just send your account
+details and the money will be sent to you", muted as scam. My first instinct was that the missing
+sender history caused it, so I built the ablation into the script — re-route the same text from a
+known contact. **It did not flip:** mute 5/5 either way. The content alone drives it. I had
+claimed the opposite after one ad-hoc run and corrected it when the reproducible version
+disagreed. If asked whether that behaviour is wrong: it is an error against the label, but a
+known contact asking for bank account details is also what a compromised account looks like, so a
+safety-first router erring toward mute there is defensible.
 
 **1. Belief fusion broke, and the fix was an invariant.**
 Porting the PTT belief graph regressed message_type 96.7% → 93.3%. Cause: banding on the

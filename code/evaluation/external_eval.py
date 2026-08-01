@@ -8,6 +8,10 @@ human annotators, downloaded at runtime.
 
     python code/evaluation/external_eval.py --limit 60
 
+After scoring, it re-routes every false positive from a sender the user
+actually knows -- the one variable that SMS cannot carry. If the decision
+flips, the error was the missing personalization rather than the content.
+
 WHAT THIS DOES AND DOES NOT TEST
 --------------------------------
 It tests the **content-safety path only**, and the framing has to be honest
@@ -83,6 +87,10 @@ def main() -> int:
     p.add_argument("--limit", type=int, default=60, help="total messages (balanced)")
     p.add_argument("--seed", type=int, default=11)
     p.add_argument("--user", default="u_003", help="receiving user for the dossier")
+    p.add_argument("--known-sender", default="u_041",
+                   help="a sender with engaged history, for the personalization ablation")
+    p.add_argument("--no-ablation", action="store_true",
+                   help="skip the personalization ablation on false positives")
     args = p.parse_args()
 
     load_env(REPO_ROOT / ".env")
@@ -161,7 +169,66 @@ def main() -> int:
 
     print("\nNote: no personalization context exists for SMS, so this exercises the "
           "content-safety\npath only — the router without the history it is built around.")
+
+    if muted_ham and not args.no_ablation:
+        _personalization_ablation(dataset, client, media_index, muted_ham, args.known_sender)
     return 0
+
+
+def _personalization_ablation(dataset, client, media_index, muted_ham, known_sender: str) -> None:
+    """Re-route each false positive from a sender the user actually knows.
+
+    Every false positive above is a message routed from an unknown number,
+    because that is what an SMS is. This re-runs the identical text from a
+    contact with engaged history, which is the only variable that changes. If
+    the decision flips, the error was caused by the *absence* of
+    personalization rather than by the content -- which is the claim this whole
+    architecture rests on, tested here on somebody else's data.
+    """
+    print("\n" + "=" * 74)
+    print("PERSONALIZATION ABLATION — same text, one variable changed: who sent it")
+    print("=" * 74)
+
+    prior = [
+        r
+        for r in dataset.history_by_user.get("u_001", [])
+        if r.get("sender_user_id") == known_sender
+    ]
+    opened = sum(1 for r in prior if (r.get("reaction") or {}).get("message_opened"))
+    replied = sum(1 for r in prior if (r.get("reaction") or {}).get("message_replied"))
+    print(f"known sender {known_sender}: {len(prior)} prior messages, "
+          f"{opened} opened, {replied} replied\n")
+
+    flipped = 0
+    for text, unknown_decision in muted_ham:
+        message = {
+            "message_id": f"ablate_{abs(hash(text)) % 10**6}",
+            "user_id": "u_001",
+            "conversation_type": "personal",
+            "group_id": None,
+            "business_id": None,
+            "sender_user_id": known_sender,
+            "created_at": "2026-08-02 14:30",
+            "message_text": text,
+            "media_type": None,
+            "media_id": None,
+            "forwarded_count": 0,
+        }
+        known_decision = router.route_one(dataset, message, client, media_index)
+        flipped += known_decision.action != "mute"
+        print(f"  {' '.join(text.split())[:88]}")
+        print(f"    from an unknown number : {unknown_decision.action}/{unknown_decision.message_type}")
+        print(f"    from a known contact   : {known_decision.action}/{known_decision.message_type}"
+              f"   <- {'corrected' if known_decision.action != 'mute' else 'unchanged'}")
+        print(f"    why                    : {known_decision.risk_note[:96]}")
+
+    if flipped:
+        print(f"\n{flipped}/{len(muted_ham)} false positive(s) corrected by adding sender history "
+              "alone.\nThe error was the missing personalization, not the content — which is the "
+              "premise\nthis architecture is built on, shown here on an external corpus.")
+    else:
+        print("\nNo false positive was corrected by sender history; these are content-level "
+              "errors.")
 
 
 if __name__ == "__main__":
