@@ -14,6 +14,7 @@ engages with the sender.
 | message_type accuracy | **96.7%** |
 | behavioural agreement (78 held-out) | **87.2%** mute/not-mute |
 | generalization (30 novel messages) | **93.3%** |
+| external corpus (real SMS, human-labelled) | **96.7%** |
 | messages resolved with no model call | **23.6%** |
 | cold-run cost | **$0.76**, down from $2.80 |
 
@@ -57,6 +58,7 @@ python code/evaluation/main.py --compare "claude-opus-5,claude-haiku-4-5"
 python code/evaluation/main.py --validate output.csv        # submission contract check
 python code/evaluation/weak_eval.py --limit 78              # behavioural evaluation
 python code/evaluation/generalization.py                     # novel messages, absent from the corpus
+python code/evaluation/external_eval.py --limit 60           # public human-labelled SMS corpus
 ```
 
 Model access sits behind one `Client.json()` call with two interchangeable backends: a bare model
@@ -410,6 +412,46 @@ Two of the original labels were also wrong, both author error and both verifiabl
 `gen_20` targeted a user who is opted *in* to that brand, and the family cases used a sender with
 no prior history while describing them as close family. The router was right; the test was wrong.
 Nothing in the pipeline was tuned against these results.
+
+### External corpus: real messages, labelled by other people
+
+The generalization suite tests messages I wrote, which is still my judgement scoring my own
+system. `code/evaluation/external_eval.py` removes me from the loop entirely: it downloads the
+**UCI SMS Spam Collection** (Almeida, Gómez Hidalgo & Yamakami, 2011) — 5,406 real SMS messages
+labelled `spam`/`ham` by human annotators — and routes a balanced sample.
+
+| | |
+|---|---|
+| overall agreement (mute vs not-mute) | **96.7%** (58/60) |
+| spam correctly muted (recall) | **96.7%** (29/30) |
+| legitimate messages left alone (specificity) | **96.7%** (29/30) |
+
+**What this does and does not show.** SMS carries no personalization context — no sender
+relationship, no engagement history, no quiet hours, no opt-out state — so this exercises the
+**content-safety path only**: the router without the signal it is actually built around. The
+label space also collapses (`spam`→mute, `ham`→not-mute), and the domain is sharply different:
+2011 UK SMS (premium-rate short codes, ringtone subscriptions, "claim your prize") against 2026
+Indian WhatsApp (UPI, KYC, society maintenance). That distance is the point — it is genuinely
+out-of-distribution rather than a restatement of the same test.
+
+**The one false positive is the most useful result in this repository.** A legitimate message —
+
+```
+"Save yourself the stress. If the person has a dorm account, just send your
+ account details and the money will be sent to you."
+```
+
+— was muted as `scam`, because "send your account details" is textbook fraud language. Routing
+the identical text with a sender the user actually knows:
+
+| sender | decision |
+|---|---|
+| unknown number (as an SMS arrives) | `mute` / `scam` |
+| known contact with engaged history | `digest` / `personal` ✓ matches the human label |
+
+The error is caused by the *absence* of personalization, and restoring it corrects the decision.
+That is the thesis of this project — **routing is personal** — demonstrated on data written and
+labelled by strangers, rather than asserted.
 
 ### Ablations
 
