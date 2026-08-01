@@ -66,6 +66,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--no-media", action="store_true", help="skip image/voice understanding")
     p.add_argument("--no-cascade", action="store_true",
                    help="disable tier-1 rules; send every message to the model")
+    p.add_argument("--ensemble", action="store_true",
+                   help="second-opinion pass with adjudication (measured as net-negative; "
+                        "see README)")
     return p.parse_args()
 
 
@@ -102,7 +105,7 @@ def main() -> int:
     stats = cascade.CascadeStats()
     decisions = router.route_all(
         dataset, messages, client, media_index, workers=args.workers, on_done=progress,
-        stats=stats, use_cascade=not args.no_cascade,
+        stats=stats, use_cascade=not args.no_cascade, use_ensemble=args.ensemble,
     )
 
     out_path = Path(args.out)

@@ -627,6 +627,28 @@ decision, for a change that can only preserve accuracy, never improve it.
 
 **A cheaper model.** Rejected on the measured comparison above.
 
+**An ensemble with adjudication.** Implemented in full (`router/ensemble.py`, `--ensemble`), then
+rejected on its own numbers. Tier 2 runs twice — the routing prompt, then an independent reviewer
+prompt that has not seen the first answer and reasons from *consequence* ("if this is muted and it
+mattered, what did the user miss?") rather than from category. Disagreements go to an adjudicator
+that sees the dossier and both answers.
+
+On the 30 labelled samples it produced 7 disagreements and resolved them **net-negative**:
+
+| | |
+|---|---|
+| action accuracy | 100% → 100% (unchanged — no adjudication ever changed the action) |
+| message_type accuracy | 96.7% → **93.3%** |
+| adjudications that helped | 1 (`sample_msg_006`, urgent → personal) |
+| adjudications that hurt | 2 (`sample_msg_005` event → business_update, `sample_msg_049` unknown → personal) |
+| tier-2 cost | roughly doubled |
+
+Self-consistency is a real technique, and the reason it fails here is specific: the disagreements
+cluster on `message_type`, not `action`, and message_type is settled by an explicit precedence
+list in the system prompt. A second reviewer reasoning from consequence has no reason to honour
+that ordering, so adjudication trades a rule-following answer for a plausible-sounding one. The
+flag stays for reproducibility; the default is a single pass.
+
 **A verification agent.** Nothing was ported from the mortgage pipeline's final stage, because
 routing has no arithmetic invariant to verify against.
 

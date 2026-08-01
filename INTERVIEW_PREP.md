@@ -101,6 +101,20 @@ Volunteering "my own system is not production-viable, here is the path and here 
 at each stage" reads as engineering judgment. Claiming $0.76 is cheap reads as not having done
 the arithmetic.
 
+**"Did you try an ensemble / self-consistency?"** (a competitor may have)
+Yes — implemented in full, then rejected on its own numbers, which is the answer worth giving.
+Tier 2 runs twice: the routing prompt, then an independent reviewer that has not seen the first
+answer and reasons from consequence rather than category, with an adjudicator on disagreements.
+On the 30 labelled rows it produced 7 disagreements and resolved them net-negative: message_type
+96.7% → 93.3% (helped 1, hurt 2), action unchanged at 100%, tier-2 cost roughly doubled.
+
+The *why* is the interesting part: the disagreements cluster on message_type, not action, and
+message_type is fixed by an explicit precedence list in my system prompt. A second reviewer
+reasoning from consequence has no reason to honour that ordering, so adjudication swaps a
+rule-following answer for a plausible-sounding one. Self-consistency helps where the failure is
+variance; my failure mode there was rule adherence. The flag stays in the repo (`--ensemble`) for
+reproducibility.
+
 **"What would you do with more time?"**
 Semantic compression of the dossier (measured: only ~11% of the request, so low value), a larger
 gold set, and per-user threshold learning. Say what you *measured and rejected*, not a wishlist.

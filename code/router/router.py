@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from . import cascade, context, reasons
+from . import cascade, context, ensemble, reasons
 from .data import Dataset
 from .llm import Client
 from .prompts import RESPONSE_SCHEMA, routing_messages
@@ -139,6 +139,7 @@ def route_one(
     media_index: MediaIndex | None = None,
     stats: cascade.CascadeStats | None = None,
     use_cascade: bool = True,
+    use_ensemble: bool = False,
 ) -> Decision:
     ctx = context.build(dataset, message)
 
@@ -181,6 +182,15 @@ def route_one(
         schema_name="routing_decision",
     )
 
+    # Optional second opinion on the messages tier 1 declined to settle.
+    if use_ensemble:
+        second = ensemble.review(client, dossier)
+        if (second.get("action"), second.get("message_type")) != (
+            result.get("action"), result.get("message_type")
+        ):
+            result = ensemble.adjudicate(client, dossier, result, second)
+            result["_adjudicated"] = True
+
     result, overrides = _apply_safety_floor(result, ctx)
     result = _reconcile_rationale(result)
 
@@ -199,7 +209,7 @@ def route_one(
         evidence_message_ids=_clean_evidence(result.get("evidence_message_ids"), ctx),
         rationale=result.get("rationale", ""),
         risk_note=result.get("risk_note", ""),
-        overrides=overrides,
+        overrides=overrides + (["adjudicated"] if result.get("_adjudicated") else []),
         raw=result,
     )
 
@@ -213,6 +223,7 @@ def route_all(
     on_done: Any = None,
     stats: cascade.CascadeStats | None = None,
     use_cascade: bool = True,
+    use_ensemble: bool = False,
 ) -> list[Decision]:
     """Route every message, preserving input order."""
     # Resolve media first and single-threaded: several messages share one media
@@ -229,7 +240,8 @@ def route_all(
     def work(item: tuple[int, dict]) -> tuple[int, Decision]:
         index, message = item
         decision = route_one(
-            dataset, message, client, media_index, stats=stats, use_cascade=use_cascade
+            dataset, message, client, media_index, stats=stats,
+            use_cascade=use_cascade, use_ensemble=use_ensemble,
         )
         if on_done:
             on_done(decision)
